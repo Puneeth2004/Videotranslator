@@ -1,98 +1,89 @@
-import os
-import tempfile
-import whisper
-from deep_translator import GoogleTranslator
-from gtts import gTTS
-import pygame
+import streamlit as st
+from utils2 import (
+    extract_audio,
+    transcribe_with_timestamps,
+    translate_text,
+    speak_text,
+    download_youtube_video,
+)
 import time
-import subprocess
-import imageio_ffmpeg
 
-# Load Whisper model
-model = whisper.load_model("tiny")
+st.set_page_config(page_title="Video Translator", layout="wide")
 
+st.sidebar.header("Controls")
+video_file = st.sidebar.file_uploader("Upload Video", type=["mp4", "mov", "avi"])
+youtube_url = st.sidebar.text_input("Or paste YouTube link")
 
-def extract_audio(video_path):
-    """Extract audio from video file using ffmpeg"""
-    audio_path = "output_audio.wav"
-    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+language_display = {
+    "Telugu": "te",
+    "Hindi": "hi",
+    "Tamil": "ta",
+    "Kannada": "kn",
+    "Malayalam": "ml"
+}
+selected_lang = st.sidebar.selectbox("🌐 Translation Language", list(language_display.keys()))
+tts_lang_code = language_display[selected_lang]
 
-    (
-        subprocess.run(
-            [
-                ffmpeg_exe,
-                "-i", video_path,
-                "-vn",               # no video
-                "-acodec", "pcm_s16le",
-                "-ar", "16000",
-                "-ac", "1",
-                audio_path
-            ],
-            check=True
-        )
-    )
-    return audio_path
+if "play_audio" not in st.session_state:
+    st.session_state.play_audio = False
+if "proceed" not in st.session_state:
+    st.session_state.proceed = False
 
+def toggle_audio():
+    st.session_state.play_audio = not st.session_state.play_audio
 
-def transcribe_with_timestamps(audio_path):
-    """Transcribes audio and returns segments with timestamps"""
-    result = model.transcribe(audio_path)
-    segments = result['segments']
-    return [{"start": seg["start"], "end": seg["end"], "text": seg["text"].strip()} for seg in segments]
-
-
-def translate_text(text, target_lang="te"):
-    """Translates text using Deep Translator"""
-    return GoogleTranslator(source='auto', target=target_lang).translate(text)
-
-
-def speak_text(text, lang='te', stop_flag=None):
-    """Converts text to speech and plays it with toggleable stop"""
-    temp_mp3 = "temp_audio.mp3"
-    tts = gTTS(text=text, lang=lang)
-    tts.save(temp_mp3)
-
-    pygame.mixer.init()
-    pygame.mixer.music.load(temp_mp3)
-    pygame.mixer.music.play()
-
-    while pygame.mixer.music.get_busy():
-        if stop_flag is not None and not stop_flag():
-            pygame.mixer.music.stop()
-            break
-        time.sleep(0.3)
-
-    pygame.mixer.quit()
-    try:
-        os.remove(temp_mp3)
-    except PermissionError:
-        pass
-
-
-def download_youtube_video(url):
-    """
-    Downloads only the audio from a YouTube video using yt-dlp and returns the path to the audio file
-    """
-    try:
-        temp_fd, temp_path = tempfile.mkstemp(suffix=".m4a")
-        os.close(temp_fd)
-        os.remove(temp_path)  # yt-dlp will create it with proper content
-
-        subprocess.run([
-            "yt-dlp",
-            "-f", "bestaudio",
-            "-o", temp_path,
-            url
-        ], check=True)
-
-        return temp_path
-
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Failed to fetch audio via yt-dlp: {str(e)}")
-
-
-def reset_app(st):
+def reset_app():
     st.session_state.play_audio = False
     st.session_state.proceed = False
     st.session_state.youtube_url = ""
     st.rerun()
+
+st.sidebar.button("🔊 Toggle Audio Playback", on_click=toggle_audio)
+st.sidebar.button("▶️ Proceed", on_click=lambda: st.session_state.update({"proceed": True}))
+st.sidebar.button("🔄 Reset", on_click=reset_app)
+
+st.title("🎥 English Video to Multilingual Translator")
+
+video_path = None
+if st.session_state.proceed:
+    if video_file is not None:
+        with open("uploaded_video.mp4", "wb") as f:
+            f.write(video_file.read())
+        video_path = "uploaded_video.mp4"
+    elif youtube_url:
+        st.info("📥 Downloading from YouTube...")
+        video_path = download_youtube_video(youtube_url)
+        st.success("YouTube video downloaded!")
+
+    if video_path:
+        with st.spinner("🎧 Extracting audio..."):
+            audio_path = extract_audio(video_path)
+
+        with st.spinner("📝 Transcribing..."):
+            transcript_segments = transcribe_with_timestamps(audio_path)
+        st.success("✅ Transcription complete")
+
+        st.subheader("🗒️ Transcript with Timestamps")
+        for seg in transcript_segments:
+            start_time = time.strftime("%H:%M:%S", time.gmtime(seg['start']))
+            end_time = time.strftime("%H:%M:%S", time.gmtime(seg['end']))
+            st.markdown(f"**[{start_time} - {end_time}]**: {seg['text']}")
+
+        full_english_text = " ".join([seg['text'] for seg in transcript_segments])
+
+        with st.spinner(f"🌐 Translating to {selected_lang}..."):
+            translated_text = translate_text(full_english_text, target_lang=tts_lang_code)
+
+        st.subheader(f"🈯 Translation in {selected_lang}")
+        st.write(translated_text)
+
+        st.subheader("🔊 Translated Audio Playback")
+        if st.session_state.play_audio:
+            st.info("🔊 Playing translated audio...")
+            speak_text(translated_text, lang=tts_lang_code, stop_flag=lambda: st.session_state.play_audio)
+        else:
+            st.info("🔇 Audio is stopped.")
+    else:
+        st.warning("Please upload a video or provide a YouTube link.")
+else:
+    st.info("Click ▶️ Proceed to start processing.")
