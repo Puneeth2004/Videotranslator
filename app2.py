@@ -30,12 +30,12 @@ if "proceed" not in st.session_state:
 
 def toggle_audio():
     st.session_state.play_audio = not st.session_state.play_audio
+
 def reset_app():
     st.session_state.play_audio = False
     st.session_state.proceed = False
     st.session_state.youtube_url = ""
-    st.rerun()  
-
+    st.rerun()
 
 st.sidebar.button("🔊 Toggle Audio Playback", on_click=toggle_audio)
 st.sidebar.button("▶️ Proceed", on_click=lambda: st.session_state.update({"proceed": True}))
@@ -50,16 +50,17 @@ if st.session_state.proceed:
             f.write(video_file.read())
         video_path = "uploaded_video.mp4"
     elif youtube_url:
-        st.info("📥 Downloading from YouTube...")
-        video_path = download_youtube_video(youtube_url)
-        st.success("YouTube video downloaded!")
+        with st.spinner("📥 Downloading audio from YouTube..."):
+            video_path = download_youtube_video(youtube_url)
+        st.success("YouTube audio downloaded!")
 
     if video_path:
-        st.info("🎧 Extracting audio...")
-        audio_path = extract_audio(video_path)
+        with st.spinner("🎧 Extracting audio..."):
+            audio_path = extract_audio(video_path)
+        st.success("Audio extracted!")
 
-        st.info("📝 Transcribing...")
-        transcript_segments = transcribe_with_timestamps(audio_path)
+        with st.spinner("📝 Transcribing..."):
+            transcript_segments = transcribe_with_timestamps(audio_path)
         st.success("✅ Transcription complete")
 
         st.subheader("🗒️ Transcript with Timestamps")
@@ -70,8 +71,9 @@ if st.session_state.proceed:
 
         full_english_text = " ".join([seg['text'] for seg in transcript_segments])
 
-        st.info(f"🌐 Translating to {selected_lang}...")
-        translated_text = translate_text(full_english_text, target_lang=tts_lang_code)
+        with st.spinner(f"🌐 Translating to {selected_lang}..."):
+            translated_text = translate_text(full_english_text, target_lang=tts_lang_code)
+        st.success(f"Translation to {selected_lang} complete!")
 
         st.subheader(f"🈯 Translation in {selected_lang}")
         st.write(translated_text)

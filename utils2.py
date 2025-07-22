@@ -13,25 +13,24 @@ model = whisper.load_model("tiny")
 
 
 def extract_audio(video_path):
-    """
-    Extracts audio from the given video using portable ffmpeg and saves as WAV.
-    Works on Streamlit Cloud.
-    """
+    """Extract audio from video file using ffmpeg"""
     audio_path = "output_audio.wav"
     ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
 
-    cmd = [
-        ffmpeg_exe,
-        "-i", video_path,
-        "-vn",
-        "-acodec", "pcm_s16le",
-        "-ar", "44100",
-        "-ac", "2",
-        audio_path
-    ]
-
-    subprocess.run(cmd, check=True)
-
+    (
+        subprocess.run(
+            [
+                ffmpeg_exe,
+                "-i", video_path,
+                "-vn",               # no video
+                "-acodec", "pcm_s16le",
+                "-ar", "16000",
+                "-ac", "1",
+                audio_path
+            ],
+            check=True
+        )
+    )
     return audio_path
 
 
@@ -39,10 +38,7 @@ def transcribe_with_timestamps(audio_path):
     """Transcribes audio and returns segments with timestamps"""
     result = model.transcribe(audio_path)
     segments = result['segments']
-    return [
-        {"start": seg["start"], "end": seg["end"], "text": seg["text"].strip()}
-        for seg in segments
-    ]
+    return [{"start": seg["start"], "end": seg["end"], "text": seg["text"].strip()} for seg in segments]
 
 
 def translate_text(text, target_lang="te"):
@@ -75,16 +71,16 @@ def speak_text(text, lang='te', stop_flag=None):
 
 def download_youtube_video(url):
     """
-    Downloads a YouTube video using yt-dlp and returns the path to the .mp4 file
+    Downloads only the audio from a YouTube video using yt-dlp and returns the path to the audio file
     """
     try:
-        temp_fd, temp_path = tempfile.mkstemp(suffix=".mp4")
+        temp_fd, temp_path = tempfile.mkstemp(suffix=".m4a")
         os.close(temp_fd)
         os.remove(temp_path)  # yt-dlp will create it with proper content
 
         subprocess.run([
             "yt-dlp",
-            "-f", "best[ext=mp4]",
+            "-f", "bestaudio",
             "-o", temp_path,
             url
         ], check=True)
@@ -92,11 +88,10 @@ def download_youtube_video(url):
         return temp_path
 
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Failed to fetch video via yt-dlp: {str(e)}")
+        raise RuntimeError(f"Failed to fetch audio via yt-dlp: {str(e)}")
 
 
-def reset_app():
-    import streamlit as st
+def reset_app(st):
     st.session_state.play_audio = False
     st.session_state.proceed = False
     st.session_state.youtube_url = ""
