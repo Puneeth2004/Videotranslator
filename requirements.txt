@@ -1,0 +1,7 @@
+streamlit
+ffmpeg-python
+openai-whisper
+nltk
+transformers
+googletrans==4.0.0rc1
+torch
