@@ -1,36 +1,48 @@
 import os
 import tempfile
 import whisper
-import ffmpeg
 from deep_translator import GoogleTranslator
 from gtts import gTTS
 import pygame
 import time
 import subprocess
+import imageio_ffmpeg
 
 # Load Whisper model
 model = whisper.load_model("tiny")
 
 
 def extract_audio(video_path):
-    """Extracts audio from video and saves as temporary .wav file"""
-    temp_audio_fd, temp_audio_path = tempfile.mkstemp(suffix=".wav")
-    os.close(temp_audio_fd)
+    """
+    Extracts audio from the given video using portable ffmpeg and saves as WAV.
+    Works on Streamlit Cloud.
+    """
+    audio_path = "output_audio.wav"
+    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
 
-    (
-        ffmpeg
-        .input(video_path)
-        .output(temp_audio_path, format='wav', acodec='pcm_s16le', ac=1, ar='16k')
-        .run(overwrite_output=True)
-    )
-    return temp_audio_path
+    cmd = [
+        ffmpeg_exe,
+        "-i", video_path,
+        "-vn",
+        "-acodec", "pcm_s16le",
+        "-ar", "44100",
+        "-ac", "2",
+        audio_path
+    ]
+
+    subprocess.run(cmd, check=True)
+
+    return audio_path
 
 
 def transcribe_with_timestamps(audio_path):
     """Transcribes audio and returns segments with timestamps"""
     result = model.transcribe(audio_path)
     segments = result['segments']
-    return [{"start": seg["start"], "end": seg["end"], "text": seg["text"].strip()} for seg in segments]
+    return [
+        {"start": seg["start"], "end": seg["end"], "text": seg["text"].strip()}
+        for seg in segments
+    ]
 
 
 def translate_text(text, target_lang="te"):
@@ -81,8 +93,11 @@ def download_youtube_video(url):
 
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Failed to fetch video via yt-dlp: {str(e)}")
+
+
 def reset_app():
+    import streamlit as st
     st.session_state.play_audio = False
     st.session_state.proceed = False
     st.session_state.youtube_url = ""
-    st.rerun()  # updated!
+    st.rerun()
